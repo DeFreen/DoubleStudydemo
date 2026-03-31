@@ -393,16 +393,54 @@ h3 { font-size: 1.25rem; }
   background: rgba(255, 255, 255, 0.04);
   border: 1px solid rgba(255, 255, 255, 0.08);
   transition: transform 180ms ease, border-color 180ms ease, background 180ms ease;
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 14px;
+  align-items: center;
 }
 
-.game-switch-button span,
-.game-switch-button strong {
+.game-switch-copy span,
+.game-switch-copy strong,
+.game-switch-copy small {
   display: block;
 }
 
-.game-switch-button strong {
+.game-switch-copy strong {
   margin-top: 8px;
   font-size: 1.1rem;
+}
+
+.game-switch-copy small {
+  margin-top: 6px;
+  color: var(--muted);
+}
+
+.game-switch-icon {
+  width: 56px;
+  height: 56px;
+  border-radius: 18px;
+  display: grid;
+  place-items: center;
+  font-size: 1.1rem;
+  font-weight: 900;
+  color: #08121d;
+  box-shadow: inset 0 -10px 18px rgba(0, 0, 0, 0.12);
+}
+
+.game-switch-icon.tone-double {
+  background: linear-gradient(145deg, #ff7a84, #ffc85c);
+}
+
+.game-switch-icon.tone-aviator {
+  background: linear-gradient(145deg, #95d8ff, #4ea8ff);
+}
+
+.game-switch-icon.tone-mines {
+  background: linear-gradient(145deg, #8ef0c8, #38c98d);
+}
+
+.game-switch-icon.tone-truco {
+  background: linear-gradient(145deg, #f6f7fb, #d7deee);
 }
 
 .game-switch-button.active {
@@ -567,8 +605,116 @@ h3 { font-size: 1.25rem; }
   border-radius: 30px;
   border: 1px solid rgba(255, 255, 255, 0.08);
   background:
-    radial-gradient(circle at 20% 20%, rgba(255, 200, 92, 0.18), transparent 24%),
-    linear-gradient(180deg, rgba(33, 72, 120, 0.92), rgba(8, 20, 38, 0.96));
+    radial-gradient(circle at 18% 22%, rgba(255, 220, 128, 0.22), transparent 20%),
+    radial-gradient(circle at 80% 14%, rgba(255, 255, 255, 0.08), transparent 18%),
+    linear-gradient(180deg, rgba(84, 164, 235, 0.94), rgba(26, 88, 152, 0.94) 45%, rgba(8, 20, 38, 0.98));
+  transition: background 320ms ease, box-shadow 320ms ease, filter 320ms ease;
+}
+
+.aviator-sky.visual-heated {
+  background:
+    radial-gradient(circle at 18% 22%, rgba(255, 216, 120, 0.28), transparent 20%),
+    radial-gradient(circle at 80% 14%, rgba(255, 255, 255, 0.1), transparent 18%),
+    linear-gradient(180deg, rgba(111, 180, 241, 0.96), rgba(255, 166, 79, 0.42) 40%, rgba(19, 42, 74, 0.98));
+}
+
+.aviator-sky.visual-danger {
+  background:
+    radial-gradient(circle at 18% 22%, rgba(255, 172, 105, 0.32), transparent 20%),
+    radial-gradient(circle at 80% 14%, rgba(255, 120, 120, 0.12), transparent 18%),
+    linear-gradient(180deg, rgba(144, 108, 78, 0.96), rgba(154, 41, 56, 0.5) 44%, rgba(32, 10, 18, 0.98));
+  box-shadow: inset 0 0 120px rgba(255, 90, 103, 0.12);
+}
+
+.aviator-sky.visual-cashout {
+  background:
+    radial-gradient(circle at 18% 22%, rgba(255, 230, 145, 0.34), transparent 20%),
+    radial-gradient(circle at 80% 14%, rgba(126, 255, 198, 0.14), transparent 18%),
+    linear-gradient(180deg, rgba(109, 215, 185, 0.96), rgba(45, 136, 95, 0.74) 42%, rgba(8, 30, 24, 0.98));
+  box-shadow: inset 0 0 140px rgba(126, 255, 198, 0.14);
+}
+
+.aviator-cloud,
+.aviator-wind,
+.aviator-kite,
+.aviator-side-stats {
+  position: absolute;
+}
+
+.aviator-glow {
+  position: absolute;
+  inset: auto auto 16% 14%;
+  width: 220px;
+  height: 220px;
+  border-radius: 999px;
+  background: radial-gradient(circle, rgba(255, 255, 255, 0.16), transparent 65%);
+  filter: blur(10px);
+  opacity: 0.75;
+}
+
+.aviator-cloud {
+  height: 24px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.24);
+  filter: blur(0.2px);
+}
+
+.aviator-cloud::before,
+.aviator-cloud::after {
+  content: "";
+  position: absolute;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.24);
+}
+
+.aviator-cloud::before {
+  width: 30px;
+  height: 30px;
+  left: 10px;
+  top: -10px;
+}
+
+.aviator-cloud::after {
+  width: 42px;
+  height: 28px;
+  right: 8px;
+  top: -8px;
+}
+
+.cloud-a {
+  width: 92px;
+  top: 22px;
+  left: 8%;
+}
+
+.cloud-b {
+  width: 120px;
+  top: 58px;
+  right: 10%;
+}
+
+.cloud-c {
+  width: 78px;
+  top: 110px;
+  left: 26%;
+}
+
+.aviator-wind {
+  height: 2px;
+  border-radius: 999px;
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.42), transparent);
+}
+
+.wind-a {
+  width: 130px;
+  top: 84px;
+  left: 14%;
+}
+
+.wind-b {
+  width: 110px;
+  top: 144px;
+  right: 14%;
 }
 
 .aviator-flight-line {
@@ -582,16 +728,77 @@ h3 { font-size: 1.25rem; }
   transform-origin: left center;
 }
 
-.aviator-plane {
+.aviator-kite {
   position: absolute;
   left: 12%;
   bottom: 18%;
-  font-size: 3rem;
   filter: drop-shadow(0 18px 24px rgba(0, 0, 0, 0.28));
 }
 
-.aviator-plane.flying {
+.kite-trail {
+  position: absolute;
+  left: -84px;
+  top: 28px;
+  width: 120px;
+  height: 2px;
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.72), rgba(255, 255, 255, 0.1));
+  transform: rotate(-18deg);
+  opacity: 0.7;
+}
+
+.kite-diamond {
+  position: relative;
+  display: block;
+  width: 54px;
+  height: 54px;
+  background: linear-gradient(145deg, #ff8f9b, #ffd36f);
+  border: 2px solid rgba(255, 255, 255, 0.4);
+  transform: rotate(45deg);
+  border-radius: 10px;
+}
+
+.kite-diamond::after {
+  content: "";
+  position: absolute;
+  inset: 10px;
+  border-radius: 8px;
+  border: 2px solid rgba(255, 255, 255, 0.3);
+}
+
+.kite-tail {
+  position: absolute;
+  width: 2px;
+  background: rgba(255, 255, 255, 0.6);
+  transform-origin: top center;
+}
+
+.tail-a {
+  height: 42px;
+  left: 28px;
+  top: 44px;
+  transform: rotate(18deg);
+}
+
+.tail-b {
+  height: 54px;
+  left: 36px;
+  top: 66px;
+  transform: rotate(26deg);
+}
+
+.tail-c {
+  height: 62px;
+  left: 46px;
+  top: 92px;
+  transform: rotate(34deg);
+}
+
+.aviator-kite.flying {
   animation: plane-rise 2.4s cubic-bezier(0.16, 0.84, 0.32, 1) infinite;
+}
+
+.aviator-kite.flying .kite-trail {
+  animation: kite-trail-pulse 0.8s ease-in-out infinite;
 }
 
 .aviator-overlay {
@@ -608,6 +815,33 @@ h3 { font-size: 1.25rem; }
 
 .aviator-overlay strong {
   font-size: clamp(2rem, 6vw, 4.8rem);
+}
+
+.aviator-side-stats {
+  top: 22px;
+  right: 22px;
+  display: grid;
+  gap: 10px;
+}
+
+.aviator-stat-pill {
+  min-width: 116px;
+  padding: 10px 12px;
+  border-radius: 18px;
+  background: rgba(7, 17, 31, 0.32);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  backdrop-filter: blur(10px);
+}
+
+.aviator-stat-pill span {
+  display: block;
+  color: rgba(243, 246, 251, 0.72);
+  font-size: 0.8rem;
+}
+
+.aviator-stat-pill strong {
+  display: block;
+  margin-top: 6px;
 }
 
 .truco-lobby,
@@ -1138,13 +1372,31 @@ h3 { font-size: 1.25rem; }
 
 @keyframes plane-rise {
   0% {
-    transform: translate3d(0, 0, 0) rotate(-10deg) scale(0.96);
+    transform: translate3d(0, 0, 0) rotate(-12deg) scale(0.94);
+  }
+  35% {
+    transform: translate3d(110px, -62px, 0) rotate(-2deg) scale(1.02);
   }
   60% {
-    transform: translate3d(180px, -110px, 0) rotate(10deg) scale(1.08);
+    transform: translate3d(190px, -104px, 0) rotate(8deg) scale(1.08);
   }
   100% {
-    transform: translate3d(320px, -190px, 0) rotate(16deg) scale(1.16);
+    transform: translate3d(320px, -188px, 0) rotate(18deg) scale(1.14);
+  }
+}
+
+@keyframes kite-trail-pulse {
+  0% {
+    opacity: 0.38;
+    transform: rotate(-18deg) scaleX(0.92);
+  }
+  50% {
+    opacity: 0.92;
+    transform: rotate(-18deg) scaleX(1.02);
+  }
+  100% {
+    opacity: 0.44;
+    transform: rotate(-18deg) scaleX(0.95);
   }
 }
 

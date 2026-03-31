@@ -861,6 +861,16 @@ export default function ArcadeApp() {
 
   const trackSymbols = Array.from({ length: 7 }).flatMap(() => symbols);
   const doubleResult = doubleGame.lastResult;
+  const aviatorVisualState =
+    doubleGame.aviator.phase === "crashed"
+      ? "danger"
+      : aviatorBet?.status === "cashed"
+        ? "cashout"
+        : doubleGame.aviator.phase === "running" && doubleGame.aviator.multiplier >= 4
+          ? "danger"
+          : doubleGame.aviator.phase === "running" && doubleGame.aviator.multiplier >= 2
+            ? "heated"
+            : "calm";
   const colorCounts = doubleGame.history.reduce((accumulator, entry) => {
     accumulator[entry.type] += 1;
     return accumulator;
@@ -931,8 +941,14 @@ export default function ArcadeApp() {
         <div className="game-switcher-grid">
           {["double", "aviator", "mines", "truco"].map((gameKey) => (
             <button className={`game-switch-button ${activeGame === gameKey ? "active" : ""}`} key={gameKey} onClick={() => setActiveGame(gameKey)} type="button">
-              <span>{gameTitles[gameKey]}</span>
-              <strong>{gameKey === "double" ? "Tempo real" : gameKey === "aviator" ? "Crash demo" : gameKey === "mines" ? "Grid tatico" : "Sala privada"}</strong>
+              <div className={`game-switch-icon tone-${gameKey}`}>
+                <span>{gameKey === "double" ? "D" : gameKey === "aviator" ? "A" : gameKey === "mines" ? "M" : "T"}</span>
+              </div>
+              <div className="game-switch-copy">
+                <span>{gameTitles[gameKey]}</span>
+                <strong>{gameKey === "double" ? "Tempo real" : gameKey === "aviator" ? "Crash demo" : gameKey === "mines" ? "Grid tatico" : "Sala privada"}</strong>
+                <small>{gameKey === "double" ? "rodadas ao vivo" : gameKey === "aviator" ? "voo compartilhado" : gameKey === "mines" ? "casas e cashout" : "mesa por codigo"}</small>
+              </div>
             </button>
           ))}
         </div>
@@ -1132,9 +1148,21 @@ export default function ArcadeApp() {
                 <strong>{doubleGame.aviator.phase === "waiting" ? `${doubleGame.aviator.countdown}s` : `${doubleGame.aviator.multiplier.toFixed(2)}x`}</strong>
               </div>
             </div>
-            <div className={`aviator-sky phase-${doubleGame.aviator.phase}`}>
+            <div className={`aviator-sky phase-${doubleGame.aviator.phase} visual-${aviatorVisualState}`}>
+              <div className="aviator-cloud cloud-a"></div>
+              <div className="aviator-cloud cloud-b"></div>
+              <div className="aviator-cloud cloud-c"></div>
+              <div className="aviator-wind wind-a"></div>
+              <div className="aviator-wind wind-b"></div>
+              <div className="aviator-glow"></div>
               <div className="aviator-flight-line"></div>
-              <div className={`aviator-plane ${doubleGame.aviator.phase === "running" ? "flying" : ""}`}>A</div>
+              <div className={`aviator-kite ${doubleGame.aviator.phase === "running" ? "flying" : ""}`}>
+                <span className="kite-trail"></span>
+                <span className="kite-diamond"></span>
+                <span className="kite-tail tail-a"></span>
+                <span className="kite-tail tail-b"></span>
+                <span className="kite-tail tail-c"></span>
+              </div>
               <div className="aviator-overlay">
                 <span>Rodada #{String(doubleGame.aviator.round).padStart(3, "0")}</span>
                 <strong>
@@ -1144,6 +1172,16 @@ export default function ArcadeApp() {
                       ? `${doubleGame.aviator.multiplier.toFixed(2)}x`
                       : `Crash em ${doubleGame.aviator.multiplier.toFixed(2)}x`}
                 </strong>
+              </div>
+              <div className="aviator-side-stats">
+                <article className="aviator-stat-pill">
+                  <span>Entradas</span>
+                  <strong>{doubleGame.aviator.players.length}</strong>
+                </article>
+                <article className="aviator-stat-pill">
+                  <span>Status</span>
+                  <strong>{doubleGame.aviator.phase === "waiting" ? "embarque" : doubleGame.aviator.phase === "running" ? "subindo" : "crash"}</strong>
+                </article>
               </div>
             </div>
             <div className="ticker-row">
