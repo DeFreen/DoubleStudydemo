@@ -18,7 +18,8 @@ const payouts = {
 const gameTitles = {
   double: "Double",
   aviator: "Aviaozinho",
-  mines: "Minas"
+  mines: "Minas",
+  truco: "Truco"
 };
 
 const avatarOptions = [
@@ -360,6 +361,8 @@ export default function ArcadeApp() {
     mineIndexes: []
   });
   const [serverArcadeHistory, setServerArcadeHistory] = useState({ aviator: [], mines: [] });
+  const [trucoState, setTrucoState] = useState({ lobby: [], room: null });
+  const [trucoJoinCode, setTrucoJoinCode] = useState("");
 
   const authenticatedName = profile?.nickname || "Convidado";
 
@@ -453,6 +456,15 @@ export default function ArcadeApp() {
     pushToast("info", "Avatar atualizado.");
   }
 
+  function sendSocketPayload(payload) {
+    if (!socketRef.current || socketRef.current.readyState !== WebSocket.OPEN) {
+      pushToast("error", "A conexao em tempo real nao esta pronta.");
+      return false;
+    }
+    socketRef.current.send(JSON.stringify(payload));
+    return true;
+  }
+
   useEffect(() => {
     if (screen !== "app") return undefined;
     let cancelled = false;
@@ -466,6 +478,7 @@ export default function ArcadeApp() {
         setUserBet(data.userBet);
         setAviatorBet(data.aviatorBet);
         setServerArcadeHistory(data.arcadeHistory || { aviator: [], mines: [] });
+        setTrucoState(data.truco || { lobby: [], room: null });
         setStatus("Mesa conectada. Entre no double ou troque para outro jogo.");
       } catch {
         if (!cancelled) setStatus("Nao foi possivel carregar a mesa agora.");
@@ -490,10 +503,15 @@ export default function ArcadeApp() {
           setDoubleGame(payload.game);
           setUserBet(payload.userBet);
           setAviatorBet(payload.aviatorBet);
+          setTrucoState(payload.truco || { lobby: [], room: null });
           return;
         }
         if (payload.type === "chat-error") {
           pushToast("error", payload.message || "Nao foi possivel enviar sua mensagem.");
+          return;
+        }
+        if (payload.type === "truco:error") {
+          pushToast("error", payload.message || "Nao foi possivel concluir a acao no truco.");
           return;
         }
         if (payload.type === "chat:sent") {
@@ -674,10 +692,40 @@ export default function ArcadeApp() {
     event.preventDefault();
     const text = chatDraft.trim();
     if (!text) return pushToast("error", "Digite uma mensagem antes de enviar.");
-    if (!socketRef.current || socketRef.current.readyState !== WebSocket.OPEN) {
+    if (!sendSocketPayload({ type: "chat:send", author: authenticatedName, text })) {
       return pushToast("error", "O chat ainda nao esta conectado.");
     }
-    socketRef.current.send(JSON.stringify({ type: "chat:send", author: authenticatedName, text }));
+  }
+
+  function createTrucoRoom() {
+    sendSocketPayload({ type: "truco:create-room" });
+  }
+
+  function joinTrucoRoom(code = trucoJoinCode) {
+    const normalized = String(code || "").trim().toUpperCase();
+    if (!normalized) return pushToast("error", "Digite um codigo de sala.");
+    sendSocketPayload({ type: "truco:join-room", code: normalized });
+    setTrucoJoinCode("");
+  }
+
+  function leaveTrucoRoom() {
+    sendSocketPayload({ type: "truco:leave-room" });
+  }
+
+  function startTrucoHand() {
+    sendSocketPayload({ type: "truco:start-hand" });
+  }
+
+  function playTrucoCard(cardId) {
+    sendSocketPayload({ type: "truco:play-card", cardId });
+  }
+
+  function requestTrucoRaise() {
+    sendSocketPayload({ type: "truco:raise" });
+  }
+
+  function respondTrucoRaise(accepted) {
+    sendSocketPayload({ type: "truco:respond-raise", accepted });
   }
 
   async function startAviatorRound() {
@@ -881,10 +929,10 @@ export default function ArcadeApp() {
           <button className="ghost-button" onClick={handleLogout} type="button">Sair</button>
         </div>
         <div className="game-switcher-grid">
-          {["double", "aviator", "mines"].map((gameKey) => (
+          {["double", "aviator", "mines", "truco"].map((gameKey) => (
             <button className={`game-switch-button ${activeGame === gameKey ? "active" : ""}`} key={gameKey} onClick={() => setActiveGame(gameKey)} type="button">
               <span>{gameTitles[gameKey]}</span>
-              <strong>{gameKey === "double" ? "Tempo real" : gameKey === "aviator" ? "Crash demo" : "Grid tatico"}</strong>
+              <strong>{gameKey === "double" ? "Tempo real" : gameKey === "aviator" ? "Crash demo" : gameKey === "mines" ? "Grid tatico" : "Sala privada"}</strong>
             </button>
           ))}
         </div>
@@ -1214,6 +1262,118 @@ export default function ArcadeApp() {
                 <li>Escolha quantas minas quer no tabuleiro.</li>
                 <li>Cada casa segura aumenta o multiplicador.</li>
                 <li>Voce pode sacar a qualquer momento depois da primeira casa segura.</li>
+              </ul>
+            </section>
+          </aside>
+        </section>
+      )}
+
+      {activeGame === "truco" && (
+        <section className="single-game-layout">
+          <div className="table-card truco-board">
+            <div className="table-header">
+              <div>
+                <p className="section-label">Sala privada</p>
+                <h2>Truco demo</h2>
+              </div>
+              <div className={`countdown-pill ${trucoState.room?.phase === "playing" ? "live" : ""}`}>
+                <span>{trucoState.room ? "Sala" : "Lobby"}</span>
+                <strong>{trucoState.room ? trucoState.room.code : `${trucoState.lobby.length}`}</strong>
+              </div>
+            </div>
+
+            {!trucoState.room ? (
+              <div className="truco-lobby">
+                <div className="truco-lobby-actions">
+                  <button className="primary-button" onClick={createTrucoRoom} type="button">Criar sala</button>
+                  <div className="truco-join-box">
+                    <input maxLength="4" onChange={(event) => setTrucoJoinCode(event.target.value.toUpperCase())} placeholder="CODIGO" type="text" value={trucoJoinCode} />
+                    <button className="ghost-button" onClick={() => joinTrucoRoom()} type="button">Entrar</button>
+                  </div>
+                </div>
+                <div className="players-feed">
+                  {trucoState.lobby.length === 0 ? (
+                    <p className="empty-state">Nenhuma sala aberta agora. Crie uma para chamar seus amigos.</p>
+                  ) : trucoState.lobby.map((room) => (
+                    <div className="player-item" key={room.code}>
+                      <div>
+                        <strong>Sala {room.code}</strong>
+                        <span>{room.players.map((player) => player.name).join(" x ") || "Aguardando"}</span>
+                      </div>
+                      <button className="ghost-button" onClick={() => joinTrucoRoom(room.code)} type="button">Entrar</button>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ) : (
+              <div className="truco-room-shell">
+                <div className="result-banner">
+                  <span className="result-dot red"></span>
+                  <strong>{trucoState.room.lastEvent || "Sala pronta."}</strong>
+                </div>
+                <div className="truco-scoreboard">
+                  {trucoState.room.players.map((player) => (
+                    <article className="stat-card" key={player.sessionId}>
+                      <span>{player.name}</span>
+                      <strong>{player.score}</strong>
+                    </article>
+                  ))}
+                </div>
+                <div className="truco-table">
+                  <div className="truco-center-info">
+                    <span>Vira: {trucoState.room.vira ? `${trucoState.room.vira.rank} ${trucoState.room.vira.suit}` : "--"}</span>
+                    <strong>{trucoState.room.phase === "playing" ? `Vez de ${trucoState.room.players.find((player) => player.sessionId === trucoState.room.turn)?.name || "..."}` : "Mao parada"}</strong>
+                  </div>
+                  <div className="truco-table-cards">
+                    {trucoState.room.tableCards.map((entry) => (
+                      <div className="truco-played-card" key={`${entry.sessionId}-${entry.card.id}`}>
+                        <span>{entry.playerName}</span>
+                        <strong>{entry.card.rank}</strong>
+                        <small>{entry.card.suit}</small>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+                <div className="truco-hand">
+                  {(trucoState.room.hand || []).map((card) => (
+                    <button className="truco-card" key={card.id} onClick={() => playTrucoCard(card.id)} type="button">
+                      <span>{card.rank}</span>
+                      <strong>{card.suit}</strong>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+
+          <aside className="side-panel">
+            <section className="panel-card controls-card">
+              <div className="panel-heading"><div><p className="section-label">Mesa</p><h3>Comandos do truco</h3></div></div>
+              <div className="control-actions">
+                <button className="primary-button" onClick={startTrucoHand} type="button">Distribuir</button>
+                <button className="ghost-button" onClick={leaveTrucoRoom} type="button">Sair da sala</button>
+              </div>
+              <div className="control-actions">
+                <button className="ghost-button" onClick={requestTrucoRaise} type="button">Pedir truco</button>
+                <button className="ghost-button" onClick={() => respondTrucoRaise(true)} type="button">Aceitar</button>
+              </div>
+              <div className="control-actions">
+                <button className="ghost-button" onClick={() => respondTrucoRaise(false)} type="button">Correr</button>
+                <button className="ghost-button" onClick={resetBalance} type="button">Resetar saldo</button>
+              </div>
+              <p className="status-text">
+                {trucoState.room?.pendingRaise
+                  ? `Pedido valendo ${trucoState.room.pendingRaise.value}.`
+                  : "Crie uma sala, chame um amigo e joguem em tempo real."}
+              </p>
+            </section>
+
+            <section className="panel-card rules-card">
+              <div className="panel-heading"><div><p className="section-label">Como funciona</p><h3>Regras demo</h3></div></div>
+              <ul className="rules-list">
+                <li>Modo simplificado para 2 jogadores.</li>
+                <li>Cada mao distribui 3 cartas para cada lado.</li>
+                <li>Voce pode pedir truco e o outro jogador aceita ou corre.</li>
               </ul>
             </section>
           </aside>

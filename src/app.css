@@ -610,6 +610,108 @@ h3 { font-size: 1.25rem; }
   font-size: clamp(2rem, 6vw, 4.8rem);
 }
 
+.truco-lobby,
+.truco-room-shell {
+  margin-top: 24px;
+  display: grid;
+  gap: 18px;
+}
+
+.truco-lobby-actions,
+.truco-join-box,
+.truco-scoreboard,
+.truco-table-cards,
+.truco-hand {
+  display: grid;
+  gap: 12px;
+}
+
+.truco-lobby-actions,
+.truco-scoreboard {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.truco-join-box {
+  grid-template-columns: minmax(0, 1fr) auto;
+}
+
+.truco-join-box input {
+  min-height: 50px;
+  padding: 0 16px;
+  border: 0;
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.94);
+  color: #0b1730;
+}
+
+.truco-table {
+  min-height: 260px;
+  padding: 24px;
+  border-radius: 30px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background:
+    radial-gradient(circle at top, rgba(255, 200, 92, 0.16), transparent 24%),
+    linear-gradient(180deg, rgba(18, 79, 54, 0.94), rgba(9, 34, 24, 0.98));
+}
+
+.truco-center-info {
+  display: grid;
+  gap: 8px;
+  justify-items: center;
+}
+
+.truco-center-info span {
+  color: rgba(243, 246, 251, 0.76);
+}
+
+.truco-center-info strong {
+  font-size: 1.2rem;
+}
+
+.truco-table-cards {
+  margin-top: 28px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.truco-played-card,
+.truco-card {
+  min-height: 120px;
+  padding: 16px;
+  border-radius: 24px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(235, 241, 250, 0.94));
+  color: #10203a;
+}
+
+.truco-played-card span,
+.truco-card strong {
+  display: block;
+  color: #475569;
+}
+
+.truco-played-card strong,
+.truco-card span {
+  display: block;
+  margin-top: 10px;
+  font-size: 2rem;
+  font-weight: 800;
+}
+
+.truco-hand {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.truco-card {
+  cursor: pointer;
+  transition: transform 180ms ease, box-shadow 180ms ease;
+}
+
+.truco-card:hover {
+  transform: translateY(-4px);
+  box-shadow: 0 16px 26px rgba(0, 0, 0, 0.18);
+}
+
 .track-pointer {
   position: absolute;
   left: 50%;

@@ -22,6 +22,10 @@ const CHAT_MAX_LENGTH = 140;
 const CHAT_COOLDOWN_MS = 1800;
 const AVIATOR_TICK_MS = 150;
 const AVIATOR_WAIT_SECONDS = 6;
+const TRUCO_MAX_PLAYERS = 2;
+const TRUCO_RANKS = ["4", "5", "6", "7", "Q", "J", "K", "A", "2", "3"];
+const TRUCO_SUITS = ["clubs", "hearts", "spades", "diamonds"];
+const TRUCO_SUIT_STRENGTH = { clubs: 0, hearts: 1, spades: 2, diamonds: 3 };
 
 const symbols = [
   { type: "red", label: "2" },
@@ -74,6 +78,9 @@ const state = {
     crashAt: 2.4,
     history: [1.42, 2.31, 3.98, 1.15, 6.42],
     bets: new Map()
+  },
+  truco: {
+    rooms: new Map()
   }
 };
 
@@ -197,6 +204,153 @@ function getAviatorSnapshot() {
   };
 }
 
+function shuffleArray(values) {
+  const items = [...values];
+  for (let index = items.length - 1; index > 0; index -= 1) {
+    const swapIndex = Math.floor(Math.random() * (index + 1));
+    [items[index], items[swapIndex]] = [items[swapIndex], items[index]];
+  }
+  return items;
+}
+
+function createTrucoDeck() {
+  return shuffleArray(
+    TRUCO_SUITS.flatMap((suit) => TRUCO_RANKS.map((rank) => ({ id: `${rank}-${suit}`, rank, suit })))
+  );
+}
+
+function getNextRank(rank) {
+  const index = TRUCO_RANKS.indexOf(rank);
+  return TRUCO_RANKS[(index + 1) % TRUCO_RANKS.length];
+}
+
+function getTrucoCardStrength(card, vira) {
+  const manilhaRank = getNextRank(vira.rank);
+  if (card.rank === manilhaRank) {
+    return 100 + TRUCO_SUIT_STRENGTH[card.suit];
+  }
+  return TRUCO_RANKS.indexOf(card.rank);
+}
+
+function createRoomCode() {
+  let code = "";
+  do {
+    code = Math.random().toString(36).slice(2, 6).toUpperCase();
+  } while (state.truco.rooms.has(code));
+  return code;
+}
+
+function getTrucoLobby() {
+  return [...state.truco.rooms.values()].map((room) => ({
+    code: room.code,
+    players: room.players.map((player) => ({ name: player.name, avatar: player.avatar })),
+    phase: room.phase,
+    score: room.score
+  }));
+}
+
+function getTrucoRoomForSession(sessionId) {
+  return [...state.truco.rooms.values()].find((room) => room.players.some((player) => player.sessionId === sessionId)) || null;
+}
+
+function createTrucoRoom(owner) {
+  const code = createRoomCode();
+  const room = {
+    code,
+    phase: "waiting",
+    players: [owner],
+    score: { [owner.sessionId]: 0 },
+    hands: {},
+    vira: null,
+    turn: owner.sessionId,
+    tableCards: [],
+    trickResults: [],
+    trickNumber: 1,
+    handPoints: 1,
+    pendingRaise: null,
+    winner: null,
+    lastEvent: "Sala criada."
+  };
+  state.truco.rooms.set(code, room);
+  return room;
+}
+
+function resetTrucoHand(room) {
+  const deck = createTrucoDeck();
+  room.vira = deck.pop();
+  room.hands = {};
+  room.tableCards = [];
+  room.trickResults = [];
+  room.trickNumber = 1;
+  room.handPoints = 1;
+  room.pendingRaise = null;
+  room.winner = null;
+  room.phase = "playing";
+  room.players.forEach((player, index) => {
+    room.hands[player.sessionId] = deck.splice(index * 3, 3);
+  });
+  room.turn = room.players[0]?.sessionId || "";
+  room.lastEvent = `Nova mao valendo ${room.handPoints} ponto.`;
+}
+
+function rotateTurn(room) {
+  const order = room.players.map((player) => player.sessionId);
+  const currentIndex = order.indexOf(room.turn);
+  room.turn = order[(currentIndex + 1) % order.length];
+}
+
+function scoreTrucoTable(room) {
+  if (room.tableCards.length < room.players.length) return null;
+  const ranked = room.tableCards.map((entry) => ({
+    ...entry,
+    strength: getTrucoCardStrength(entry.card, room.vira)
+  })).sort((left, right) => right.strength - left.strength);
+  const winner = ranked[0];
+  room.trickResults.push(winner.sessionId);
+  room.lastEvent = `${winner.playerName} levou a baza ${room.trickNumber}.`;
+  room.trickNumber += 1;
+  room.tableCards = [];
+  room.turn = winner.sessionId;
+
+  const wins = room.trickResults.reduce((accumulator, sessionId) => {
+    accumulator[sessionId] = (accumulator[sessionId] || 0) + 1;
+    return accumulator;
+  }, {});
+  const winnerEntry = room.players.find((player) => (wins[player.sessionId] || 0) >= 2);
+  if (winnerEntry) {
+    room.score[winnerEntry.sessionId] = (room.score[winnerEntry.sessionId] || 0) + room.handPoints;
+    room.phase = "hand-ended";
+    room.winner = winnerEntry.sessionId;
+    room.lastEvent = `${winnerEntry.name} venceu a mao e somou ${room.handPoints} ponto(s).`;
+  }
+
+  return winner.sessionId;
+}
+
+function getTrucoRoomPayload(room, sessionId) {
+  if (!room) return null;
+  return {
+    code: room.code,
+    phase: room.phase,
+    players: room.players.map((player) => ({
+      sessionId: player.sessionId,
+      name: player.name,
+      avatar: player.avatar,
+      score: room.score[player.sessionId] || 0
+    })),
+    hand: room.hands[sessionId] || [],
+    turn: room.turn,
+    vira: room.vira,
+    tableCards: room.tableCards,
+    trickResults: room.trickResults,
+    trickNumber: room.trickNumber,
+    handPoints: room.handPoints,
+    pendingRaise: room.pendingRaise,
+    winner: room.winner,
+    lastEvent: room.lastEvent
+  };
+}
+
 function rebuildPools() {
   state.pools = { red: 0, black: 0, white: 0 };
 
@@ -238,11 +392,16 @@ function pushArcadeHistory(game, entry) {
 }
 
 function createClientPayload(sessionId = "") {
+  const trucoRoom = getTrucoRoomForSession(sessionId);
   return JSON.stringify({
     type: "snapshot",
     game: getSnapshot(),
     userBet: getUserState(sessionId),
-    aviatorBet: getAviatorUserState(sessionId)
+    aviatorBet: getAviatorUserState(sessionId),
+    truco: {
+      lobby: getTrucoLobby(),
+      room: getTrucoRoomPayload(trucoRoom, sessionId)
+    }
   });
 }
 
@@ -520,32 +679,173 @@ wss.on("connection", (socket, request) => {
       return;
     }
 
-    if (payload.type !== "chat:send") {
+    if (payload.type === "chat:send") {
+      const now = Date.now();
+      const author = sanitizeNickname(payload.author, socket.profileName);
+      const text = sanitizeChatText(payload.text);
+
+      if (!text) {
+        sendToSocket(socket, { type: "chat-error", message: "Digite uma mensagem antes de enviar." });
+        return;
+      }
+
+      if (now - socket.lastChatAt < CHAT_COOLDOWN_MS) {
+        sendToSocket(socket, { type: "chat-error", message: "Espere um instante antes de mandar outra mensagem." });
+        return;
+      }
+
+      socket.lastChatAt = now;
+      socket.profileName = author;
+      pushChatMessage(author, text, "user");
+      broadcast();
+      sendToSocket(socket, { type: "chat:sent" });
       return;
     }
 
-    const now = Date.now();
-    const author = sanitizeNickname(payload.author, socket.profileName);
-    const text = sanitizeChatText(payload.text);
-
-    if (!text) {
-      sendToSocket(socket, { type: "chat-error", message: "Digite uma mensagem antes de enviar." });
+    if (payload.type === "truco:create-room") {
+      const existingRoom = getTrucoRoomForSession(socket.sessionId);
+      if (existingRoom) {
+        sendToSocket(socket, { type: "truco:error", message: "Voce ja esta em uma sala." });
+        return;
+      }
+      createTrucoRoom({
+        sessionId: socket.sessionId,
+        name: sanitizeNickname(socket.profileName, "Convidado"),
+        avatar: sanitizeAvatar(socket.avatar, "star")
+      });
+      broadcast();
       return;
     }
 
-    if (now - socket.lastChatAt < CHAT_COOLDOWN_MS) {
-      sendToSocket(socket, { type: "chat-error", message: "Espere um instante antes de mandar outra mensagem." });
+    if (payload.type === "truco:join-room") {
+      const code = String(payload.code || "").trim().toUpperCase();
+      const room = state.truco.rooms.get(code);
+      if (!room) {
+        sendToSocket(socket, { type: "truco:error", message: "Sala nao encontrada." });
+        return;
+      }
+      if (room.players.length >= TRUCO_MAX_PLAYERS) {
+        sendToSocket(socket, { type: "truco:error", message: "Sala cheia." });
+        return;
+      }
+      if (room.players.some((player) => player.sessionId === socket.sessionId)) {
+        broadcast();
+        return;
+      }
+      room.players.push({
+        sessionId: socket.sessionId,
+        name: sanitizeNickname(socket.profileName, "Convidado"),
+        avatar: sanitizeAvatar(socket.avatar, "star")
+      });
+      room.score[socket.sessionId] = room.score[socket.sessionId] || 0;
+      room.lastEvent = "Sala completa. Pronta para jogar.";
+      broadcast();
       return;
     }
 
-    socket.lastChatAt = now;
-    socket.profileName = author;
-    pushChatMessage(author, text, "user");
-    broadcast();
-    sendToSocket(socket, { type: "chat:sent" });
+    if (payload.type === "truco:leave-room") {
+      const room = getTrucoRoomForSession(socket.sessionId);
+      if (!room) return;
+      room.players = room.players.filter((player) => player.sessionId !== socket.sessionId);
+      delete room.score[socket.sessionId];
+      delete room.hands[socket.sessionId];
+      room.tableCards = room.tableCards.filter((entry) => entry.sessionId !== socket.sessionId);
+      if (room.players.length === 0) {
+        state.truco.rooms.delete(room.code);
+      } else {
+        room.phase = "waiting";
+        room.lastEvent = "Um jogador saiu da sala.";
+        room.turn = room.players[0].sessionId;
+      }
+      broadcast();
+      return;
+    }
+
+    if (payload.type === "truco:start-hand") {
+      const room = getTrucoRoomForSession(socket.sessionId);
+      if (!room || room.players.length !== TRUCO_MAX_PLAYERS) {
+        sendToSocket(socket, { type: "truco:error", message: "A sala precisa de 2 jogadores." });
+        return;
+      }
+      resetTrucoHand(room);
+      broadcast();
+      return;
+    }
+
+    if (payload.type === "truco:play-card") {
+      const room = getTrucoRoomForSession(socket.sessionId);
+      if (!room || room.phase !== "playing") return;
+      if (room.turn !== socket.sessionId) {
+        sendToSocket(socket, { type: "truco:error", message: "Espere sua vez." });
+        return;
+      }
+      const cardId = String(payload.cardId || "");
+      const hand = room.hands[socket.sessionId] || [];
+      const cardIndex = hand.findIndex((card) => card.id === cardId);
+      if (cardIndex === -1) return;
+      const [card] = hand.splice(cardIndex, 1);
+      room.tableCards.push({
+        sessionId: socket.sessionId,
+        playerName: sanitizeNickname(socket.profileName, "Convidado"),
+        card
+      });
+      if (room.tableCards.length < room.players.length) {
+        rotateTurn(room);
+      } else {
+        scoreTrucoTable(room);
+      }
+      broadcast();
+      return;
+    }
+
+    if (payload.type === "truco:raise") {
+      const room = getTrucoRoomForSession(socket.sessionId);
+      if (!room || room.phase !== "playing" || room.pendingRaise) return;
+      const nextValue = room.handPoints === 1 ? 3 : room.handPoints === 3 ? 6 : room.handPoints === 6 ? 9 : 12;
+      if (room.handPoints >= 12) return;
+      room.pendingRaise = {
+        from: socket.sessionId,
+        value: nextValue
+      };
+      room.lastEvent = `${sanitizeNickname(socket.profileName, "Convidado")} pediu truco para ${nextValue}.`;
+      broadcast();
+      return;
+    }
+
+    if (payload.type === "truco:respond-raise") {
+      const room = getTrucoRoomForSession(socket.sessionId);
+      if (!room || !room.pendingRaise) return;
+      const accepted = Boolean(payload.accepted);
+      const asker = room.pendingRaise.from;
+      if (accepted) {
+        room.handPoints = room.pendingRaise.value;
+        room.pendingRaise = null;
+        room.lastEvent = `${sanitizeNickname(socket.profileName, "Convidado")} aceitou. Mao vale ${room.handPoints}.`;
+      } else {
+        room.score[asker] = (room.score[asker] || 0) + Math.max(1, room.handPoints);
+        room.phase = "hand-ended";
+        room.winner = asker;
+        room.lastEvent = `${sanitizeNickname(socket.profileName, "Convidado")} correu da mao.`;
+        room.pendingRaise = null;
+      }
+      broadcast();
+    }
   });
 
   socket.on("close", () => {
+    const room = getTrucoRoomForSession(socket.sessionId);
+    if (room) {
+      room.players = room.players.filter((player) => player.sessionId !== socket.sessionId);
+      delete room.score[socket.sessionId];
+      delete room.hands[socket.sessionId];
+      if (room.players.length === 0) {
+        state.truco.rooms.delete(room.code);
+      } else {
+        room.phase = "waiting";
+        room.turn = room.players[0].sessionId;
+        room.lastEvent = "Um jogador saiu da sala.";
+      }
+    }
     broadcast();
   });
 });
@@ -600,6 +900,7 @@ setInterval(() => {
 }, 1000);
 
 openBetting();
+openAviatorWaiting();
 
 server.listen(PORT, HOST, () => {
   console.log(`Double Lab demo server on http://${HOST}:${PORT}`);
