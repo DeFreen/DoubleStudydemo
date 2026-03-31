@@ -1,10 +1,10 @@
 import React from "react";
 import ReactDOM from "react-dom/client";
-import AppShell from "./AppShell";
+import ArcadeApp from "./ArcadeApp";
 import "./app.css";
 
 ReactDOM.createRoot(document.querySelector("#root")).render(
   <React.StrictMode>
-    <AppShell />
+    <ArcadeApp />
   </React.StrictMode>
 );

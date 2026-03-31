@@ -39,22 +39,6 @@ const symbols = [
   { type: "black", label: "9" }
 ];
 
-const demoNames = [
-  "Luna77", "RafaXP", "BlackMamba", "NinaBet", "Atlas", "Caveira", "Maya", "NeonFox",
-  "Jota", "Rubi", "Pixel", "Drako", "Sol", "Vortex", "Kira", "Bolt"
-];
-
-const chatTemplates = [
-  "vai vir branco agora",
-  "martingale do estudo ligado",
-  "essa mesa ta vermelha hoje",
-  "entrei leve so para testar",
-  "preto vem forte nessa rodada",
-  "segurando para o branco raro",
-  "mais uma rodada para analisar o padrao",
-  "dobrei a entrada demo agora"
-];
-
 const state = {
   round: 1,
   autoMode: true,
@@ -70,12 +54,15 @@ const state = {
     { type: "red", label: "6" }
   ],
   upcoming: [],
-  fakePlayers: [],
   pools: { red: 0, black: 0, white: 0 },
   lastResult: null,
   pendingResult: null,
   chat: [],
-  userBets: new Map()
+  userBets: new Map(),
+  arcadeHistory: {
+    aviator: [],
+    mines: []
+  }
 };
 
 app.use(express.json());
@@ -114,19 +101,6 @@ function createUpcoming() {
   state.upcoming = Array.from({ length: 10 }, () => getRandomSymbolByType(getRandomResultType()));
 }
 
-function createFakePlayers() {
-  state.fakePlayers = Array.from({ length: 7 }, (_, index) => {
-    const bet = getRandomResultType();
-    return {
-      id: `${state.round}-${index}`,
-      name: demoNames[(state.round + index) % demoNames.length],
-      bet,
-      amount: randomInt(10, 250),
-      message: index % 2 === 0 ? "entrou na rodada" : "pressionando a mesa"
-    };
-  });
-}
-
 function pushChatMessage(author, text, tone = "neutral") {
   state.chat.unshift({
     id: `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
@@ -160,22 +134,22 @@ function sendToSocket(socket, payload) {
   }
 }
 
-function createFakeChatBurst() {
-  const count = randomInt(2, 4);
-
-  for (let index = 0; index < count; index += 1) {
-    const author = demoNames[randomInt(0, demoNames.length - 1)];
-    const text = chatTemplates[randomInt(0, chatTemplates.length - 1)];
-    pushChatMessage(author, text);
-  }
+function getOnlineUsers() {
+  const seen = new Set();
+  const users = [];
+  wss.clients.forEach((client) => {
+    if (client.readyState !== 1 || !client.sessionId || seen.has(client.sessionId)) return;
+    seen.add(client.sessionId);
+    users.push({
+      id: client.sessionId,
+      name: sanitizeNickname(client.profileName, `Sessao ${client.sessionId.slice(-4) || "demo"}`)
+    });
+  });
+  return users.sort((left, right) => left.name.localeCompare(right.name, "pt-BR"));
 }
 
 function rebuildPools() {
   state.pools = { red: 0, black: 0, white: 0 };
-
-  state.fakePlayers.forEach((player) => {
-    state.pools[player.bet] += player.amount;
-  });
 
   for (const bet of state.userBets.values()) {
     state.pools[bet.type] += bet.amount;
@@ -190,16 +164,26 @@ function getSnapshot() {
     countdown: state.countdown,
     history: state.history,
     upcoming: state.upcoming,
-    fakePlayers: state.fakePlayers,
     pools: state.pools,
     lastResult: state.lastResult,
     pendingResult: state.pendingResult,
-    chat: state.chat
+    chat: state.chat,
+    onlineUsers: getOnlineUsers()
   };
 }
 
 function getUserState(sessionId) {
   return state.userBets.get(sessionId) || null;
+}
+
+function pushArcadeHistory(game, entry) {
+  if (!state.arcadeHistory[game]) return;
+  state.arcadeHistory[game].unshift({
+    id: `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+    createdAt: new Date().toISOString(),
+    ...entry
+  });
+  state.arcadeHistory[game] = state.arcadeHistory[game].slice(0, 12);
 }
 
 function createClientPayload(sessionId = "") {
@@ -222,9 +206,7 @@ function openBetting() {
   state.phase = "betting";
   state.countdown = phaseSeconds.betting;
   state.pendingResult = null;
-  createFakePlayers();
   createUpcoming();
-  createFakeChatBurst();
   rebuildPools();
   broadcast();
 }
@@ -275,8 +257,28 @@ app.get("/api/bootstrap", (req, res) => {
   const sessionId = String(req.query.sessionId || "");
   res.json({
     game: getSnapshot(),
-    userBet: getUserState(sessionId)
+    userBet: getUserState(sessionId),
+    arcadeHistory: state.arcadeHistory
   });
+});
+
+app.post("/api/arcade/history", (req, res) => {
+  const { game, player, title, detail, multiplier, payout } = req.body || {};
+
+  if (!["aviator", "mines"].includes(game)) {
+    res.status(400).json({ error: "Jogo invalido." });
+    return;
+  }
+
+  pushArcadeHistory(game, {
+    player: sanitizeNickname(player, "Convidado"),
+    title: sanitizeChatText(title),
+    detail: sanitizeChatText(detail),
+    multiplier: Number(multiplier) || 0,
+    payout: Number(payout) || 0
+  });
+
+  res.json({ ok: true, arcadeHistory: state.arcadeHistory });
 });
 
 app.post("/api/bet", (req, res) => {
@@ -339,6 +341,7 @@ wss.on("connection", (socket, request) => {
   socket.profileName = sanitizeNickname(requestUrl.searchParams.get("profile"), `Sessao ${socket.sessionId.slice(-4) || "demo"}`);
   socket.lastChatAt = 0;
   socket.send(createClientPayload(socket.sessionId));
+  broadcast();
 
   socket.on("message", (rawMessage) => {
     let payload;
@@ -373,6 +376,10 @@ wss.on("connection", (socket, request) => {
     pushChatMessage(author, text, "user");
     broadcast();
     sendToSocket(socket, { type: "chat:sent" });
+  });
+
+  socket.on("close", () => {
+    broadcast();
   });
 });
 
