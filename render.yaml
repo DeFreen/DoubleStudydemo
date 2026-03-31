@@ -1,0 +1,9 @@
+services:
+  - type: web
+    name: double-lab-demo
+    runtime: node
+    plan: free
+    autoDeployTrigger: commit
+    buildCommand: npm install && npm run build
+    startCommand: npm run start
+    healthCheckPath: /api/bootstrap?sessionId=healthcheck
