@@ -335,6 +335,7 @@ export default function ArcadeApp() {
     revealed: [],
     mineIndexes: []
   });
+  const [serverArcadeHistory, setServerArcadeHistory] = useState({ aviator: [], mines: [] });
 
   const authenticatedName = profile?.nickname || "Convidado";
 
@@ -352,6 +353,22 @@ export default function ArcadeApp() {
       { id: `${Date.now()}-${Math.random().toString(36).slice(2, 6)}`, ...entry },
       ...current
     ].slice(0, 10));
+  }
+
+  async function pushServerArcadeHistory(entry) {
+    try {
+      const response = await fetch("/api/arcade/history", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(entry)
+      });
+      const data = await response.json();
+      if (response.ok && data.arcadeHistory) {
+        setServerArcadeHistory(data.arcadeHistory);
+      }
+    } catch {
+      pushToast("error", "Nao foi possivel atualizar o mural compartilhado.");
+    }
   }
 
   function persistProfiles(nextProfiles) {
@@ -412,6 +429,7 @@ export default function ArcadeApp() {
         if (cancelled) return;
         setDoubleGame(data.game);
         setUserBet(data.userBet);
+        setServerArcadeHistory(data.arcadeHistory || { aviator: [], mines: [] });
         setStatus("Mesa conectada. Entre no double ou troque para outro jogo.");
       } catch {
         if (!cancelled) setStatus("Nao foi possivel carregar a mesa agora.");
@@ -558,6 +576,14 @@ export default function ArcadeApp() {
             sounds.playLose();
             pushToast("error", `O aviao explodiu em ${current.crashAt.toFixed(2)}x.`);
             appendRecentPlay({ game: "aviator", title: `Crash ${current.crashAt.toFixed(2)}x`, amount: current.betAmount, detail: `perdeu ${formatCurrency(current.betAmount)}` });
+            pushServerArcadeHistory({
+              game: "aviator",
+              player: authenticatedName,
+              title: `Crash ${current.crashAt.toFixed(2)}x`,
+              detail: `perdeu ${formatCurrency(current.betAmount)}`,
+              multiplier: current.crashAt,
+              payout: 0
+            });
           }
           return { ...current, phase: "crashed", multiplier: current.crashAt, activeBet: false, history: [current.crashAt, ...current.history].slice(0, 8) };
         }
@@ -629,6 +655,14 @@ export default function ArcadeApp() {
     sounds.playWin();
     pushToast("success", `Cashout em ${aviator.multiplier.toFixed(2)}x.`);
     appendRecentPlay({ game: "aviator", title: `Cashout ${aviator.multiplier.toFixed(2)}x`, amount: payout, detail: `retornou ${formatCurrency(payout)}` });
+    pushServerArcadeHistory({
+      game: "aviator",
+      player: authenticatedName,
+      title: `Cashout ${aviator.multiplier.toFixed(2)}x`,
+      detail: `retornou ${formatCurrency(payout)}`,
+      multiplier: aviator.multiplier,
+      payout
+    });
     setAviator((current) => ({ ...current, phase: "cashed", activeBet: false, history: [current.multiplier, ...current.history].slice(0, 8) }));
   }
 
@@ -655,6 +689,14 @@ export default function ArcadeApp() {
         sounds.playLose();
         pushToast("error", "Voce encontrou uma mina.");
         appendRecentPlay({ game: "mines", title: `${current.mineCount} minas`, amount: current.betAmount, detail: `perdeu ${formatCurrency(current.betAmount)}` });
+        pushServerArcadeHistory({
+          game: "mines",
+          player: authenticatedName,
+          title: `${current.mineCount} minas`,
+          detail: `perdeu ${formatCurrency(current.betAmount)}`,
+          multiplier: current.multiplier,
+          payout: 0
+        });
         return { ...current, phase: "lost", revealed: [...current.revealed, index] };
       }
       const revealed = [...current.revealed, index];
@@ -666,6 +708,14 @@ export default function ArcadeApp() {
         sounds.playWin();
         pushToast("success", `Tabuleiro limpo. Retorno de ${formatCurrency(payout)}.`);
         appendRecentPlay({ game: "mines", title: `${current.mineCount} minas`, amount: payout, detail: `retornou ${formatCurrency(payout)}` });
+        pushServerArcadeHistory({
+          game: "mines",
+          player: authenticatedName,
+          title: `${current.mineCount} minas`,
+          detail: `retornou ${formatCurrency(payout)}`,
+          multiplier,
+          payout
+        });
         return { ...current, phase: "won", revealed, multiplier };
       }
       return { ...current, revealed, multiplier };
@@ -681,6 +731,14 @@ export default function ArcadeApp() {
     sounds.playWin();
     pushToast("success", `Cashout em minas com ${mines.multiplier.toFixed(2)}x.`);
     appendRecentPlay({ game: "mines", title: `${mines.mineCount} minas`, amount: payout, detail: `retornou ${formatCurrency(payout)}` });
+    pushServerArcadeHistory({
+      game: "mines",
+      player: authenticatedName,
+      title: `${mines.mineCount} minas`,
+      detail: `retornou ${formatCurrency(payout)}`,
+      multiplier: mines.multiplier,
+      payout
+    });
     setMines((current) => ({ ...current, phase: "cashed" }));
   }
 
@@ -1070,6 +1128,40 @@ export default function ArcadeApp() {
                 <small>{bet.detail}</small>
               </div>
             ))}
+          </div>
+        </section>
+
+        <section className="panel-card">
+          <div className="panel-heading"><div><p className="section-label">Mural global</p><h3>Aviator e Minas</h3></div></div>
+          <div className="arcade-history-grid">
+            <div className="arcade-history-column">
+              <strong className="arcade-history-title">Aviaozinho</strong>
+              <div className="user-bets-list">
+                {serverArcadeHistory.aviator.length === 0 ? (
+                  <p className="empty-state">Nenhuma rodada compartilhada ainda.</p>
+                ) : serverArcadeHistory.aviator.slice(0, 4).map((entry) => (
+                  <div className="user-bet-item" key={entry.id}>
+                    <strong>{entry.player}</strong>
+                    <span>{entry.title}</span>
+                    <small>{entry.detail}</small>
+                  </div>
+                ))}
+              </div>
+            </div>
+            <div className="arcade-history-column">
+              <strong className="arcade-history-title">Minas</strong>
+              <div className="user-bets-list">
+                {serverArcadeHistory.mines.length === 0 ? (
+                  <p className="empty-state">Nenhuma rodada compartilhada ainda.</p>
+                ) : serverArcadeHistory.mines.slice(0, 4).map((entry) => (
+                  <div className="user-bet-item" key={entry.id}>
+                    <strong>{entry.player}</strong>
+                    <span>{entry.title}</span>
+                    <small>{entry.detail}</small>
+                  </div>
+                ))}
+              </div>
+            </div>
           </div>
         </section>
 
