@@ -290,6 +290,7 @@ export default function AppShell() {
   const [connectionState, setConnectionState] = useState("connecting");
   const [toasts, setToasts] = useState([]);
   const [confetti, setConfetti] = useState([]);
+  const [chatDraft, setChatDraft] = useState("");
 
   function pushToast(kind, message) {
     toastIdRef.current += 1;
@@ -369,7 +370,7 @@ export default function AppShell() {
 
     function connectSocket() {
       const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
-      const socket = new WebSocket(`${protocol}//${window.location.host}/ws?sessionId=${sessionIdRef.current}`);
+      const socket = new WebSocket(`${protocol}//${window.location.host}/ws?sessionId=${sessionIdRef.current}&profile=${encodeURIComponent(profile?.nickname || "Convidado")}`);
       socketRef.current = socket;
       setConnectionState("connecting");
 
@@ -384,6 +385,14 @@ export default function AppShell() {
         if (payload.type === "snapshot") {
           setGame(payload.game);
           setUserBet(payload.userBet);
+          return;
+        }
+        if (payload.type === "chat-error") {
+          pushToast("error", payload.message || "Nao foi possivel enviar sua mensagem.");
+          return;
+        }
+        if (payload.type === "chat:sent") {
+          setChatDraft("");
         }
       };
 
@@ -408,7 +417,7 @@ export default function AppShell() {
       if (reconnectTimeoutRef.current) window.clearTimeout(reconnectTimeoutRef.current);
       if (socketRef.current) socketRef.current.close();
     };
-  }, [screen]);
+  }, [profile?.nickname, screen]);
 
   useEffect(() => {
     if (!profile?.id) return;
@@ -508,7 +517,7 @@ export default function AppShell() {
     const response = await fetch("/api/bet", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ sessionId: sessionIdRef.current, type: selectedBet, amount })
+      body: JSON.stringify({ sessionId: sessionIdRef.current, type: selectedBet, amount, profileName: authenticatedName })
     });
     const data = await response.json();
     if (!response.ok) {
@@ -529,6 +538,25 @@ export default function AppShell() {
 
   async function toggleAuto() {
     await fetch("/api/admin/auto-toggle", { method: "POST" });
+  }
+
+  function sendChatMessage(event) {
+    event.preventDefault();
+    const text = chatDraft.trim();
+    if (!text) {
+      pushToast("error", "Digite uma mensagem antes de enviar.");
+      return;
+    }
+    if (!socketRef.current || socketRef.current.readyState !== WebSocket.OPEN) {
+      pushToast("error", "O chat ainda nao esta conectado.");
+      return;
+    }
+
+    socketRef.current.send(JSON.stringify({
+      type: "chat:send",
+      author: authenticatedName,
+      text
+    }));
   }
 
   function resetBalance() {
@@ -625,8 +653,8 @@ export default function AppShell() {
             <section className="panel-card chat-card chat-card-inline">
               <div className="panel-heading">
                 <div>
-                  <p className="section-label">Chat demo</p>
-                  <h3>Movimento da mesa</h3>
+                  <p className="section-label">Chat ao vivo</p>
+                  <h3>Conversa da mesa</h3>
                 </div>
               </div>
               <div className="chat-feed">
@@ -640,6 +668,17 @@ export default function AppShell() {
                   </div>
                 ))}
               </div>
+              <form className="chat-compose" onSubmit={sendChatMessage}>
+                <input
+                  className="chat-input"
+                  maxLength="140"
+                  onChange={(event) => setChatDraft(event.target.value)}
+                  placeholder="Escreva para a mesa..."
+                  type="text"
+                  value={chatDraft}
+                />
+                <button className="primary-button" type="submit">Enviar</button>
+              </form>
             </section>
 
             <div className="table-card">

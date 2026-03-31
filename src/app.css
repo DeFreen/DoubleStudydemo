@@ -661,6 +661,22 @@ h3 { font-size: 1.25rem; }
   border-radius: 20px;
 }
 
+.chat-compose {
+  margin-top: 16px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 10px;
+}
+
+.chat-input {
+  min-height: 50px;
+  padding: 0 16px;
+  border: 0;
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.94);
+  color: #0b1730;
+}
+
 .identity-block {
   display: flex;
   align-items: center;
@@ -764,6 +780,11 @@ h3 { font-size: 1.25rem; }
   background: rgba(255, 90, 103, 0.08);
 }
 
+.chat-item.user {
+  border-color: rgba(78, 168, 255, 0.24);
+  background: rgba(78, 168, 255, 0.08);
+}
+
 .empty-state {
   color: var(--muted);
   line-height: 1.5;
@@ -841,6 +862,10 @@ h3 { font-size: 1.25rem; }
   .auth-toggle,
   .saved-profile-actions {
     flex-direction: column;
+  }
+
+  .chat-compose {
+    grid-template-columns: 1fr;
   }
 
   .ticker-row {

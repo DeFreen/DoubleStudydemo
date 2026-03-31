@@ -18,6 +18,8 @@ const PORT = Number(process.env.PORT) || 3001;
 const HOST = "0.0.0.0";
 const phaseSeconds = { betting: 12, spinning: 5, result: 3 };
 const payoutMap = { red: 2, black: 2, white: 14 };
+const CHAT_MAX_LENGTH = 140;
+const CHAT_COOLDOWN_MS = 1800;
 
 const symbols = [
   { type: "red", label: "2" },
@@ -135,6 +137,29 @@ function pushChatMessage(author, text, tone = "neutral") {
   state.chat = state.chat.slice(0, 16);
 }
 
+function sanitizeChatText(value) {
+  return String(value || "")
+    .replace(/\s+/g, " ")
+    .replace(/[<>]/g, "")
+    .trim()
+    .slice(0, CHAT_MAX_LENGTH);
+}
+
+function sanitizeNickname(value, fallback = "Convidado") {
+  const sanitized = String(value || "")
+    .replace(/\s+/g, " ")
+    .replace(/[<>]/g, "")
+    .trim()
+    .slice(0, 18);
+  return sanitized || fallback;
+}
+
+function sendToSocket(socket, payload) {
+  if (socket.readyState === 1) {
+    socket.send(JSON.stringify(payload));
+  }
+}
+
 function createFakeChatBurst() {
   const count = randomInt(2, 4);
 
@@ -229,7 +254,7 @@ function settleRound() {
     });
 
     pushChatMessage(
-      bet.sessionId === "demo-bot" ? "Mesa" : `Sessao ${sessionId.slice(-4)}`,
+      bet.sessionId === "demo-bot" ? "Mesa" : sanitizeNickname(bet.profileName, `Sessao ${sessionId.slice(-4)}`),
       won
         ? `bateu ${state.pendingResult.label} e a entrada demo devolveu ${bet.amount * payoutMap[bet.type]}`
         : `errei no ${state.pendingResult.label}, volto na proxima`,
@@ -255,7 +280,7 @@ app.get("/api/bootstrap", (req, res) => {
 });
 
 app.post("/api/bet", (req, res) => {
-  const { sessionId, type, amount } = req.body || {};
+  const { sessionId, type, amount, profileName } = req.body || {};
 
   if (!sessionId || !["red", "black", "white"].includes(type) || !Number.isFinite(amount) || amount < 1) {
     res.status(400).json({ error: "Aposta invalida." });
@@ -269,12 +294,16 @@ app.post("/api/bet", (req, res) => {
 
   state.userBets.set(sessionId, {
     sessionId,
+    profileName: sanitizeNickname(profileName, `Sessao ${String(sessionId).slice(-4)}`),
     type,
     amount,
     round: state.round
   });
 
-  pushChatMessage(`Sessao ${String(sessionId).slice(-4)}`, `entrou ${amount} no ${type === "red" ? "vermelho" : type === "black" ? "preto" : "branco"}`);
+  pushChatMessage(
+    sanitizeNickname(profileName, `Sessao ${String(sessionId).slice(-4)}`),
+    `entrou ${amount} no ${type === "red" ? "vermelho" : type === "black" ? "preto" : "branco"}`
+  );
   rebuildPools();
   broadcast();
   res.json({ ok: true, userBet: getUserState(sessionId), pools: state.pools });
@@ -307,7 +336,44 @@ if (fs.existsSync(distPath)) {
 wss.on("connection", (socket, request) => {
   const requestUrl = new URL(request.url, "http://localhost");
   socket.sessionId = requestUrl.searchParams.get("sessionId") || "";
+  socket.profileName = sanitizeNickname(requestUrl.searchParams.get("profile"), `Sessao ${socket.sessionId.slice(-4) || "demo"}`);
+  socket.lastChatAt = 0;
   socket.send(createClientPayload(socket.sessionId));
+
+  socket.on("message", (rawMessage) => {
+    let payload;
+
+    try {
+      payload = JSON.parse(String(rawMessage || "{}"));
+    } catch {
+      sendToSocket(socket, { type: "chat-error", message: "Mensagem invalida." });
+      return;
+    }
+
+    if (payload.type !== "chat:send") {
+      return;
+    }
+
+    const now = Date.now();
+    const author = sanitizeNickname(payload.author, socket.profileName);
+    const text = sanitizeChatText(payload.text);
+
+    if (!text) {
+      sendToSocket(socket, { type: "chat-error", message: "Digite uma mensagem antes de enviar." });
+      return;
+    }
+
+    if (now - socket.lastChatAt < CHAT_COOLDOWN_MS) {
+      sendToSocket(socket, { type: "chat-error", message: "Espere um instante antes de mandar outra mensagem." });
+      return;
+    }
+
+    socket.lastChatAt = now;
+    socket.profileName = author;
+    pushChatMessage(author, text, "user");
+    broadcast();
+    sendToSocket(socket, { type: "chat:sent" });
+  });
 });
 
 setInterval(() => {
