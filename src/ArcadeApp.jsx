@@ -21,6 +21,15 @@ const gameTitles = {
   mines: "Minas"
 };
 
+const avatarOptions = [
+  { id: "star", label: "Estrela", symbol: "S" },
+  { id: "rocket", label: "Foguete", symbol: "R" },
+  { id: "bolt", label: "Raio", symbol: "B" },
+  { id: "crown", label: "Coroa", symbol: "C" },
+  { id: "gem", label: "Gema", symbol: "G" },
+  { id: "flame", label: "Chama", symbol: "F" }
+];
+
 const symbols = [
   { type: "red", label: "2" },
   { type: "black", label: "8" },
@@ -101,6 +110,10 @@ function getAvatarData(name) {
   let hash = 0;
   for (const char of safeName) hash += char.charCodeAt(0);
   return { initials, tone: palette[hash % palette.length] };
+}
+
+function getAvatarSymbol(avatarId) {
+  return avatarOptions.find((option) => option.id === avatarId)?.symbol || "S";
 }
 
 function calculateMinesMultiplier(revealedCount, mineCount) {
@@ -205,6 +218,7 @@ function LandingScreen({ onEnter }) {
 
 function LoginScreen({ onBack, onCreateProfile, onLoginProfile, onRemoveProfile, savedProfiles }) {
   const [nickname, setNickname] = useState("");
+  const [avatar, setAvatar] = useState("star");
   const [mode, setMode] = useState(savedProfiles.length > 0 ? "saved" : "create");
 
   useEffect(() => {
@@ -217,7 +231,7 @@ function LoginScreen({ onBack, onCreateProfile, onLoginProfile, onRemoveProfile,
     event.preventDefault();
     const trimmed = nickname.trim();
     if (!trimmed) return;
-    onCreateProfile(trimmed);
+    onCreateProfile(trimmed, avatar);
   }
 
   return (
@@ -236,7 +250,7 @@ function LoginScreen({ onBack, onCreateProfile, onLoginProfile, onRemoveProfile,
               savedProfiles.map((profile) => (
                 <article className="saved-profile-card" key={profile.id}>
                   <div className="identity-block">
-                    <span className={`avatar-chip ${getAvatarData(profile.nickname).tone}`}>{getAvatarData(profile.nickname).initials}</span>
+                    <span className={`avatar-chip ${getAvatarData(profile.nickname).tone}`}>{getAvatarSymbol(profile.avatar)}</span>
                     <div>
                       <strong>{profile.nickname}</strong>
                       <span>Perfil local salvo</span>
@@ -262,6 +276,14 @@ function LoginScreen({ onBack, onCreateProfile, onLoginProfile, onRemoveProfile,
               Seu nickname demo
               <input maxLength="18" onChange={(event) => setNickname(event.target.value)} placeholder="Ex.: OliveLab" type="text" value={nickname} />
             </label>
+            <div className="avatar-picker">
+              {avatarOptions.map((option) => (
+                <button className={`avatar-choice ${avatar === option.id ? "active" : ""}`} key={option.id} onClick={() => setAvatar(option.id)} type="button">
+                  <span>{option.symbol}</span>
+                  <small>{option.label}</small>
+                </button>
+              ))}
+            </div>
             <button className="primary-button" type="submit">Criar e entrar</button>
           </form>
         )}
@@ -275,6 +297,7 @@ export default function ArcadeApp() {
   const sessionIdRef = useRef(getSessionId());
   const previousPhaseRef = useRef(null);
   const previousRoundRef = useRef(null);
+  const previousAviatorStatusRef = useRef(null);
   const trackRef = useRef(null);
   const reconnectTimeoutRef = useRef(null);
   const socketRef = useRef(null);
@@ -296,7 +319,16 @@ export default function ArcadeApp() {
     lastResult: null,
     pendingResult: null,
     chat: [],
-    onlineUsers: []
+    onlineUsers: [],
+    leaderboard: [],
+    aviator: {
+      round: 1,
+      phase: "waiting",
+      countdown: 6,
+      multiplier: 1,
+      history: [],
+      players: []
+    }
   });
   const [selectedBet, setSelectedBet] = useState(null);
   const [doubleAmount, setDoubleAmount] = useState(25);
@@ -317,15 +349,7 @@ export default function ArcadeApp() {
   const [confetti, setConfetti] = useState([]);
   const [chatDraft, setChatDraft] = useState("");
   const [aviatorAmount, setAviatorAmount] = useState(25);
-  const [aviator, setAviator] = useState({
-    round: 1,
-    phase: "idle",
-    multiplier: 1,
-    crashAt: 0,
-    betAmount: 0,
-    activeBet: false,
-    history: [1.42, 2.31, 3.98, 1.15, 6.42]
-  });
+  const [aviatorBet, setAviatorBet] = useState(null);
   const [minesAmount, setMinesAmount] = useState(25);
   const [mines, setMines] = useState({
     phase: "idle",
@@ -376,11 +400,11 @@ export default function ArcadeApp() {
     window.localStorage.setItem(PROFILES_STORAGE_KEY, JSON.stringify(nextProfiles));
   }
 
-  function handleCreateProfile(nickname) {
+  function handleCreateProfile(nickname, avatar = "star") {
     const trimmed = nickname.trim();
     if (!trimmed) return;
     const existing = savedProfiles.find((entry) => entry.nickname.toLowerCase() === trimmed.toLowerCase());
-    const nextProfile = existing || { id: createProfileId(trimmed), nickname: trimmed, createdAt: new Date().toISOString() };
+    const nextProfile = existing || { id: createProfileId(trimmed), nickname: trimmed, avatar, createdAt: new Date().toISOString() };
     if (!existing) persistProfiles([nextProfile, ...savedProfiles].slice(0, 6));
     setProfile(nextProfile);
     window.localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(nextProfile));
@@ -418,6 +442,17 @@ export default function ArcadeApp() {
     pushToast("info", "Perfil local encerrado.");
   }
 
+  function updateProfileAvatar(nextAvatar) {
+    setProfile((current) => {
+      if (!current) return current;
+      const updated = { ...current, avatar: nextAvatar };
+      window.localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(updated));
+      persistProfiles(savedProfiles.map((entry) => (entry.id === updated.id ? updated : entry)));
+      return updated;
+    });
+    pushToast("info", "Avatar atualizado.");
+  }
+
   useEffect(() => {
     if (screen !== "app") return undefined;
     let cancelled = false;
@@ -429,6 +464,7 @@ export default function ArcadeApp() {
         if (cancelled) return;
         setDoubleGame(data.game);
         setUserBet(data.userBet);
+        setAviatorBet(data.aviatorBet);
         setServerArcadeHistory(data.arcadeHistory || { aviator: [], mines: [] });
         setStatus("Mesa conectada. Entre no double ou troque para outro jogo.");
       } catch {
@@ -438,7 +474,7 @@ export default function ArcadeApp() {
 
     function connectSocket() {
       const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
-      const socket = new WebSocket(`${protocol}//${window.location.host}/ws?sessionId=${sessionIdRef.current}&profile=${encodeURIComponent(authenticatedName)}`);
+      const socket = new WebSocket(`${protocol}//${window.location.host}/ws?sessionId=${sessionIdRef.current}&profile=${encodeURIComponent(authenticatedName)}&avatar=${encodeURIComponent(profile?.avatar || "star")}`);
       socketRef.current = socket;
       setConnectionState("connecting");
 
@@ -453,6 +489,7 @@ export default function ArcadeApp() {
         if (payload.type === "snapshot") {
           setDoubleGame(payload.game);
           setUserBet(payload.userBet);
+          setAviatorBet(payload.aviatorBet);
           return;
         }
         if (payload.type === "chat-error") {
@@ -483,7 +520,7 @@ export default function ArcadeApp() {
       if (reconnectTimeoutRef.current) window.clearTimeout(reconnectTimeoutRef.current);
       if (socketRef.current) socketRef.current.close();
     };
-  }, [authenticatedName, screen]);
+  }, [authenticatedName, profile?.avatar, screen]);
 
   useEffect(() => {
     if (!profile?.id) return;
@@ -495,6 +532,20 @@ export default function ArcadeApp() {
     if (!profile?.id) return;
     window.localStorage.setItem(getBalanceStorageKey(profile.id), String(balance));
   }, [balance, profile]);
+
+  useEffect(() => {
+    if (screen !== "app" || !profile?.id) return;
+    fetch("/api/profile/sync", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        sessionId: sessionIdRef.current,
+        profileName: authenticatedName,
+        avatar: profile.avatar || "star",
+        balance
+      })
+    }).catch(() => {});
+  }, [authenticatedName, balance, profile, screen]);
 
   useEffect(() => {
     if (!profile?.id) return;
@@ -566,32 +617,30 @@ export default function ArcadeApp() {
   }, [doubleGame.lastResult, doubleGame.round, screen, sounds, userBet]);
 
   useEffect(() => {
-    if (screen !== "app" || aviator.phase !== "running") return undefined;
-    const timer = window.setInterval(() => {
-      setAviator((current) => {
-        if (current.phase !== "running") return current;
-        const nextMultiplier = Number((current.multiplier + 0.03 + current.multiplier * 0.012).toFixed(2));
-        if (nextMultiplier >= current.crashAt) {
-          if (current.activeBet) {
-            sounds.playLose();
-            pushToast("error", `O aviao explodiu em ${current.crashAt.toFixed(2)}x.`);
-            appendRecentPlay({ game: "aviator", title: `Crash ${current.crashAt.toFixed(2)}x`, amount: current.betAmount, detail: `perdeu ${formatCurrency(current.betAmount)}` });
-            pushServerArcadeHistory({
-              game: "aviator",
-              player: authenticatedName,
-              title: `Crash ${current.crashAt.toFixed(2)}x`,
-              detail: `perdeu ${formatCurrency(current.betAmount)}`,
-              multiplier: current.crashAt,
-              payout: 0
-            });
-          }
-          return { ...current, phase: "crashed", multiplier: current.crashAt, activeBet: false, history: [current.crashAt, ...current.history].slice(0, 8) };
-        }
-        return { ...current, multiplier: nextMultiplier };
+    const currentStatus = aviatorBet?.status || null;
+    if (!currentStatus || currentStatus === previousAviatorStatusRef.current) return;
+
+    if (currentStatus === "lost") {
+      sounds.playLose();
+      pushToast("error", `O aviaozinho caiu em ${doubleGame.aviator.multiplier.toFixed(2)}x.`);
+      appendRecentPlay({
+        game: "aviator",
+        title: `Crash ${doubleGame.aviator.multiplier.toFixed(2)}x`,
+        amount: aviatorBet.amount,
+        detail: `perdeu ${formatCurrency(aviatorBet.amount)}`
       });
-    }, 120);
-    return () => window.clearInterval(timer);
-  }, [aviator.phase, screen, sounds]);
+      pushServerArcadeHistory({
+        game: "aviator",
+        player: authenticatedName,
+        title: `Crash ${doubleGame.aviator.multiplier.toFixed(2)}x`,
+        detail: `perdeu ${formatCurrency(aviatorBet.amount)}`,
+        multiplier: doubleGame.aviator.multiplier,
+        payout: 0
+      });
+    }
+
+    previousAviatorStatusRef.current = currentStatus;
+  }, [authenticatedName, aviatorBet, doubleGame.aviator.multiplier, sounds]);
 
   async function confirmBet() {
     if (!selectedBet) return pushToast("error", "Escolha uma cor antes de confirmar.");
@@ -631,39 +680,49 @@ export default function ArcadeApp() {
     socketRef.current.send(JSON.stringify({ type: "chat:send", author: authenticatedName, text }));
   }
 
-  function startAviatorRound() {
+  async function startAviatorRound() {
     if (aviatorAmount < 1) return pushToast("error", "Defina um valor valido para o aviaozinho.");
     if (aviatorAmount > balance) return pushToast("error", "Saldo demo insuficiente para o aviaozinho.");
+    const response = await fetch("/api/aviator/bet", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        sessionId: sessionIdRef.current,
+        amount: aviatorAmount,
+        profileName: authenticatedName,
+        avatar: profile?.avatar || "star"
+      })
+    });
+    const data = await response.json();
+    if (!response.ok) return pushToast("error", data.error || "Nao foi possivel entrar no voo.");
     setBalance((current) => current - aviatorAmount);
+    setAviatorBet(data.aviatorBet);
     sounds.playBet();
-    setAviator((current) => ({
-      ...current,
-      round: current.round + 1,
-      phase: "running",
-      multiplier: 1,
-      crashAt: Number((1.2 + Math.random() * 5.8).toFixed(2)),
-      betAmount: aviatorAmount,
-      activeBet: true
-    }));
-    setStatus(`Voo iniciado com ${formatCurrency(aviatorAmount)}.`);
+    setStatus(`Entrada no aviaozinho confirmada com ${formatCurrency(aviatorAmount)}.`);
   }
 
-  function cashoutAviator() {
-    if (!aviator.activeBet || aviator.phase !== "running") return;
-    const payout = Math.max(aviator.betAmount, Math.floor(aviator.betAmount * aviator.multiplier));
-    setBalance((current) => current + payout);
+  async function cashoutAviator() {
+    if (!aviatorBet || aviatorBet.status !== "active" || doubleGame.aviator.phase !== "running") return;
+    const response = await fetch("/api/aviator/cashout", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ sessionId: sessionIdRef.current })
+    });
+    const data = await response.json();
+    if (!response.ok) return pushToast("error", data.error || "Nao foi possivel sacar agora.");
+    setBalance((current) => current + data.payout);
+    setAviatorBet(data.aviatorBet);
     sounds.playWin();
-    pushToast("success", `Cashout em ${aviator.multiplier.toFixed(2)}x.`);
-    appendRecentPlay({ game: "aviator", title: `Cashout ${aviator.multiplier.toFixed(2)}x`, amount: payout, detail: `retornou ${formatCurrency(payout)}` });
+    pushToast("success", `Cashout em ${data.multiplier.toFixed(2)}x.`);
+    appendRecentPlay({ game: "aviator", title: `Cashout ${data.multiplier.toFixed(2)}x`, amount: data.payout, detail: `retornou ${formatCurrency(data.payout)}` });
     pushServerArcadeHistory({
       game: "aviator",
       player: authenticatedName,
-      title: `Cashout ${aviator.multiplier.toFixed(2)}x`,
-      detail: `retornou ${formatCurrency(payout)}`,
-      multiplier: aviator.multiplier,
-      payout
+      title: `Cashout ${data.multiplier.toFixed(2)}x`,
+      detail: `retornou ${formatCurrency(data.payout)}`,
+      multiplier: data.multiplier,
+      payout: data.payout
     });
-    setAviator((current) => ({ ...current, phase: "cashed", activeBet: false, history: [current.multiplier, ...current.history].slice(0, 8) }));
   }
 
   function startMinesGame() {
@@ -804,7 +863,7 @@ export default function ArcadeApp() {
           <p className="intro">Plataforma demo com tres jogos, chat ao vivo e saldo local compartilhado. Sem dinheiro real, sem deposito e sem operacao financeira.</p>
         </div>
         <div className="hero-stats">
-          <article className="stat-card"><span>Perfil</span><strong>{authenticatedName}</strong></article>
+          <article className="stat-card"><span>Perfil</span><strong>{`${getAvatarSymbol(profile?.avatar || "star")} ${authenticatedName}`}</strong></article>
           <article className="stat-card"><span>Saldo demo</span><strong>{formatCurrency(balance)}</strong></article>
           <article className="stat-card"><span>Modo atual</span><strong>{gameTitles[activeGame]}</strong></article>
           <article className="stat-card"><span>Conexao</span><strong>{connectionState === "online" ? "Tempo real" : connectionState === "reconnecting" ? "Reconectando" : "Conectando"}</strong></article>
@@ -981,10 +1040,28 @@ export default function ArcadeApp() {
                   ) : doubleGame.onlineUsers.map((player) => (
                     <div className="player-item" key={player.id}>
                       <div className="identity-block">
-                        <span className={`avatar-chip ${getAvatarData(player.name).tone}`}>{getAvatarData(player.name).initials}</span>
+                        <span className={`avatar-chip ${getAvatarData(player.name).tone}`}>{getAvatarSymbol(player.avatar)}</span>
                         <strong>{player.name}</strong>
                       </div>
                       <span className="player-badge online">Online</span>
+                    </div>
+                  ))}
+                </div>
+              </section>
+
+              <section className="panel-card leaderboard-card">
+                <div className="panel-heading"><div><p className="section-label">Ranking</p><h3>Saldo ao vivo</h3></div></div>
+                <div className="players-feed">
+                  {doubleGame.leaderboard.length === 0 ? (
+                    <p className="empty-state">Ranking vazio por enquanto.</p>
+                  ) : doubleGame.leaderboard.map((player, index) => (
+                    <div className="player-item" key={`${player.id}-${index}`}>
+                      <div className="identity-block">
+                        <span className={`avatar-chip ${getAvatarData(player.name).tone}`}>{getAvatarSymbol(player.avatar)}</span>
+                        <strong>{player.name}</strong>
+                      </div>
+                      <span className="player-badge online">#{index + 1}</span>
+                      <small>{formatCurrency(player.balance)}</small>
                     </div>
                   ))}
                 </div>
@@ -1002,21 +1079,27 @@ export default function ArcadeApp() {
                 <p className="section-label">Crash demo</p>
                 <h2>Aviaozinho</h2>
               </div>
-              <div className={`countdown-pill ${aviator.phase === "running" ? "live" : ""}`}>
-                <span>{aviator.phase === "running" ? "Multiplicador" : aviator.phase === "crashed" ? "Crash" : "Pronto"}</span>
-                <strong>{aviator.multiplier.toFixed(2)}x</strong>
+              <div className={`countdown-pill ${doubleGame.aviator.phase === "running" ? "live" : ""}`}>
+                <span>{doubleGame.aviator.phase === "waiting" ? "Decola em" : doubleGame.aviator.phase === "running" ? "Multiplicador" : "Crash"}</span>
+                <strong>{doubleGame.aviator.phase === "waiting" ? `${doubleGame.aviator.countdown}s` : `${doubleGame.aviator.multiplier.toFixed(2)}x`}</strong>
               </div>
             </div>
-            <div className={`aviator-sky phase-${aviator.phase}`}>
+            <div className={`aviator-sky phase-${doubleGame.aviator.phase}`}>
               <div className="aviator-flight-line"></div>
-              <div className={`aviator-plane ${aviator.phase === "running" ? "flying" : ""}`}>A</div>
+              <div className={`aviator-plane ${doubleGame.aviator.phase === "running" ? "flying" : ""}`}>A</div>
               <div className="aviator-overlay">
-                <span>Rodada #{String(aviator.round).padStart(3, "0")}</span>
-                <strong>{aviator.phase === "running" ? `${aviator.multiplier.toFixed(2)}x` : aviator.phase === "crashed" ? `Crash em ${aviator.crashAt.toFixed(2)}x` : "Pronto para decolar"}</strong>
+                <span>Rodada #{String(doubleGame.aviator.round).padStart(3, "0")}</span>
+                <strong>
+                  {doubleGame.aviator.phase === "waiting"
+                    ? `Voo abre em ${doubleGame.aviator.countdown}s`
+                    : doubleGame.aviator.phase === "running"
+                      ? `${doubleGame.aviator.multiplier.toFixed(2)}x`
+                      : `Crash em ${doubleGame.aviator.multiplier.toFixed(2)}x`}
+                </strong>
               </div>
             </div>
             <div className="ticker-row">
-              {aviator.history.map((entry, index) => (
+              {doubleGame.aviator.history.map((entry, index) => (
                 <div className={`ticker-chip ${entry >= 2 ? "red" : "black"}`} key={`${entry}-${index}`}>
                   <strong>{entry.toFixed(2)}x</strong>
                   <small>{entry >= 2 ? "voo alto" : "queda cedo"}</small>
@@ -1038,10 +1121,14 @@ export default function ArcadeApp() {
                 ))}
               </div>
               <div className="control-actions">
-                <button className="primary-button" onClick={startAviatorRound} type="button">{aviator.phase === "running" ? "Voando..." : "Iniciar voo"}</button>
+                <button className="primary-button" onClick={startAviatorRound} type="button">{doubleGame.aviator.phase === "waiting" ? "Entrar no voo" : "Voo em curso"}</button>
                 <button className="ghost-button" onClick={cashoutAviator} type="button">Cashout</button>
               </div>
-              <p className="status-text">{aviator.activeBet ? `Aposta ativa de ${formatCurrency(aviator.betAmount)}.` : "Comece um voo e tente sacar antes da queda."}</p>
+              <p className="status-text">
+                {aviatorBet?.status === "active"
+                  ? `Aposta ativa de ${formatCurrency(aviatorBet.amount)}.`
+                  : "Entre no voo compartilhado e tente sacar antes da queda."}
+              </p>
             </section>
 
             <section className="panel-card rules-card">
@@ -1051,6 +1138,24 @@ export default function ArcadeApp() {
                 <li>O multiplicador sobe automaticamente enquanto o aviao esta no ar.</li>
                 <li>Se sacar antes do crash, o retorno entra no saldo demo.</li>
               </ul>
+            </section>
+
+            <section className="panel-card players-card">
+              <div className="panel-heading"><div><p className="section-label">Voo atual</p><h3>Jogadores na rodada</h3></div></div>
+              <div className="players-feed">
+                {doubleGame.aviator.players.length === 0 ? (
+                  <p className="empty-state">Ainda sem entradas neste voo.</p>
+                ) : doubleGame.aviator.players.map((player) => (
+                  <div className="player-item" key={player.sessionId}>
+                    <div className="identity-block">
+                      <span className={`avatar-chip ${getAvatarData(player.profileName).tone}`}>{getAvatarSymbol(player.avatar)}</span>
+                      <strong>{player.profileName}</strong>
+                    </div>
+                    <span className="player-badge online">{player.status}</span>
+                    <small>{formatCurrency(player.amount)}</small>
+                  </div>
+                ))}
+              </div>
             </section>
           </aside>
         </section>
@@ -1167,6 +1272,14 @@ export default function ArcadeApp() {
 
         <section className="panel-card">
           <div className="panel-heading"><div><p className="section-label">Conta demo</p><h3>Atalhos rapidos</h3></div></div>
+          <div className="avatar-picker compact">
+            {avatarOptions.map((option) => (
+              <button className={`avatar-choice ${profile?.avatar === option.id ? "active" : ""}`} key={option.id} onClick={() => updateProfileAvatar(option.id)} type="button">
+                <span>{option.symbol}</span>
+                <small>{option.label}</small>
+              </button>
+            ))}
+          </div>
           <div className="control-actions">
             <button className="ghost-button" onClick={resetBalance} type="button">Resetar saldo</button>
             <button className="ghost-button" onClick={() => setActiveGame("double")} type="button">Voltar ao double</button>

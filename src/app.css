@@ -129,6 +129,46 @@ button { border: 0; }
   flex-wrap: wrap;
 }
 
+.avatar-picker {
+  margin-top: 10px;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.avatar-picker.compact {
+  margin-top: 18px;
+}
+
+.avatar-choice {
+  min-height: 64px;
+  border-radius: 18px;
+  cursor: pointer;
+  color: var(--text);
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.avatar-choice span,
+.avatar-choice small {
+  display: block;
+}
+
+.avatar-choice span {
+  font-size: 1.1rem;
+  font-weight: 800;
+}
+
+.avatar-choice small {
+  margin-top: 4px;
+  color: var(--muted);
+}
+
+.avatar-choice.active {
+  border-color: rgba(255, 200, 92, 0.34);
+  background: rgba(255, 200, 92, 0.12);
+}
+
 .auth-toggle {
   margin-top: 24px;
 }
